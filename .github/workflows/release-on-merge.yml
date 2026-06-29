@@ -9,9 +9,6 @@ on:
       binary_name:
         required: true
         type: string
-      homebrew_event:
-        required: true
-        type: string
       pkgdesc:
         required: true
         type: string
@@ -128,7 +125,6 @@ jobs:
     with:
       version: ${{ needs.auto-release.outputs.new_version }}
       binary_name: ${{ inputs.binary_name }}
-      homebrew_event: ${{ inputs.homebrew_event }}
       pkgdesc: ${{ inputs.pkgdesc }}
       aur_depends: ${{ inputs.aur_depends }}
       nur_build_inputs: ${{ inputs.nur_build_inputs }}

@@ -37,6 +37,8 @@ on:
         required: true
       NUR_PAT:
         required: true
+      HOMEBREW_PAT:
+        required: true
 jobs:
   update-aur:
     name: Update AUR
@@ -344,3 +346,71 @@ jobs:
           git commit -m "${BINARY_NAME}: ${version}"
           git push origin main
           echo "Changes committed and pushed successfully"
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: x71c9/homebrew-x71c9
+          token: ${{ secrets.HOMEBREW_PAT }}
+
+      - name: Bootstrap or update formula
+        run: |
+          BINARY_NAME="${{ inputs.binary_name }}"
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          FORMULA="Formula/${BINARY_NAME}.rb"
+
+          wget -q -O "${BINARY_NAME}-x86_64.tar.gz" \
+            "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-x86_64-apple-darwin.tar.gz"
+          wget -q -O "${BINARY_NAME}-aarch64.tar.gz" \
+            "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-aarch64-apple-darwin.tar.gz"
+
+          SHA256_X86_64=$(sha256sum "${BINARY_NAME}-x86_64.tar.gz" | awk '{print $1}')
+          SHA256_AARCH64=$(sha256sum "${BINARY_NAME}-aarch64.tar.gz" | awk '{print $1}')
+
+          CLASS_NAME=$(echo "$BINARY_NAME" | sed 's/\b./\u&/g' | tr -d '-')
+
+          if [ ! -f "$FORMULA" ]; then
+            cat > "$FORMULA" <<EOF
+          class ${CLASS_NAME} < Formula
+            desc "${{ inputs.pkgdesc }}"
+            homepage "https://github.com/x71c9/${BINARY_NAME}"
+            version "${version}"
+            url "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-x86_64-apple-darwin.tar.gz"
+            sha256 "${SHA256_X86_64}"
+
+            if Hardware::CPU.arm?
+              url "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-aarch64-apple-darwin.tar.gz"
+              sha256 "${SHA256_AARCH64}"
+            end
+
+            def install
+              bin.install "${BINARY_NAME}"
+            end
+
+            test do
+              system "#{bin}/${BINARY_NAME}", "--version"
+            end
+          end
+          EOF
+          else
+            sed -i "s|version \".*\"|version \"${version}\"|" "$FORMULA"
+            sed -i "s|url \".*x86_64.*apple.*\"|url \"https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-x86_64-apple-darwin.tar.gz\"|" "$FORMULA"
+            sed -i "s|url \".*aarch64.*apple.*\"|url \"https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-aarch64-apple-darwin.tar.gz\"|" "$FORMULA"
+            # Update sha256 lines in order: x86_64 first, aarch64 second
+            awk -v x="${SHA256_X86_64}" -v a="${SHA256_AARCH64}" '
+              /sha256 "/ && !done_x { sub(/sha256 ".*"/, "sha256 \"" x "\""); done_x=1; print; next }
+              /sha256 "/ && done_x  { sub(/sha256 ".*"/, "sha256 \"" a "\""); print; next }
+              { print }
+            ' "$FORMULA" > "${FORMULA}.tmp" && mv "${FORMULA}.tmp" "$FORMULA"
+          fi
+
+          git config user.name "x71c9"
+          git config user.email "108585118+x71c9@users.noreply.github.com"
+          git add "$FORMULA"
+          git commit -m "${BINARY_NAME}: ${version}"
+          git push
