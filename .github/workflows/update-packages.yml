@@ -1,0 +1,346 @@
+---
+name: Update Package Repositories
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      binary_name:
+        required: true
+        type: string
+      pkgdesc:
+        required: true
+        type: string
+      aur_depends:
+        required: false
+        type: string
+        default: "'glibc'"
+      nur_build_inputs:
+        required: false
+        type: string
+        default: ""
+      nur_description:
+        required: false
+        type: string
+        default: ""
+      has_shell_completions:
+        required: false
+        type: boolean
+        default: false
+      completion_subcommand:
+        required: false
+        type: string
+        default: "completion"
+    secrets:
+      AUR_SECRET_KEY:
+        required: true
+      NUR_PAT:
+        required: true
+jobs:
+  update-aur:
+    name: Update AUR
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm base-devel coreutils curl git openssh sudo
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SECRET_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+
+      - name: Checkout AUR Repository
+        run: |
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" \
+            git clone ssh://aur@aur.archlinux.org/${{ inputs.binary_name }}.git aur-pkg || {
+              mkdir aur-pkg
+              cd aur-pkg
+              git init
+              git remote add origin ssh://aur@aur.archlinux.org/${{ inputs.binary_name }}.git
+            }
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builduser
+          echo "builduser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+          chown -R builduser:builduser aur-pkg
+          mkdir -p /home/builduser/.ssh
+          cp ~/.ssh/id_ed25519 /home/builduser/.ssh/id_ed25519
+          chown -R builduser:builduser /home/builduser/.ssh
+          chmod 600 /home/builduser/.ssh/id_ed25519
+
+      - name: Update PKGBUILD and Push to AUR
+        run: |
+          sudo -E -H -u builduser bash <<'SCRIPT'
+          cd aur-pkg
+          BINARY_NAME="${{ inputs.binary_name }}"
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          curl -OL "https://codeload.github.com/x71c9/${BINARY_NAME}/tar.gz/refs/tags/v${version}"
+          sha256sum=$(sha256sum "v${version}" | awk '{print $1}')
+          cat > PKGBUILD <<EOF
+          pkgname=${BINARY_NAME}
+          pkgver=${version}
+          pkgrel=1
+          pkgdesc="${{ inputs.pkgdesc }}"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/x71c9/${BINARY_NAME}"
+          license=('MIT')
+          depends=(${{ inputs.aur_depends }})
+          makedepends=('rust')
+
+          source=("\$pkgname-\$pkgver.tar.gz::https://codeload.github.com/x71c9/\$pkgname/tar.gz/refs/tags/v\$pkgver")
+          sha256sums=("${sha256sum}")
+
+          prepare() {
+            cd "\$pkgname-\$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            cargo fetch --locked --target "\$(rustc -vV | sed -n 's/host: //p')"
+          }
+
+          build() {
+            cd "\$pkgname-\$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            export CARGO_TARGET_DIR=target
+            cargo build --frozen --release --all-features
+          }
+
+          package() {
+            cd "\$pkgname-\$pkgver"
+            install -Dm0755 -t "\$pkgdir/usr/bin/" "target/release/${BINARY_NAME}"
+          }
+          EOF
+          makepkg --printsrcinfo > .SRCINFO
+          git config user.email "mail@x71c9.com"
+          git config user.name "x71c9"
+          git add .
+          git commit -m "chore(release): release ${version}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" git push origin master
+          SCRIPT
+
+  update-aur-bin:
+    name: Update AUR Binary Package
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm base-devel coreutils curl git openssh sudo
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SECRET_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+
+      - name: Checkout AUR Binary Repository
+        run: |
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" \
+            git clone ssh://aur@aur.archlinux.org/${{ inputs.binary_name }}-bin.git aur-bin-pkg || {
+              mkdir aur-bin-pkg
+              cd aur-bin-pkg
+              git init
+              git remote add origin ssh://aur@aur.archlinux.org/${{ inputs.binary_name }}-bin.git
+            }
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builduser
+          echo "builduser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+          chown -R builduser:builduser aur-bin-pkg
+          mkdir -p /home/builduser/.ssh
+          cp ~/.ssh/id_ed25519 /home/builduser/.ssh/id_ed25519
+          chown -R builduser:builduser /home/builduser/.ssh
+          chmod 600 /home/builduser/.ssh/id_ed25519
+
+      - name: Update PKGBUILD and Push to AUR
+        run: |
+          sudo -E -H -u builduser bash <<'SCRIPT'
+          cd aur-bin-pkg
+          BINARY_NAME="${{ inputs.binary_name }}"
+          version="${{ inputs.version }}"
+          version="${version#v}"
+
+          curl -OL "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -OL "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-aarch64-unknown-linux-gnu.tar.gz"
+
+          sha256sum_x86_64=$(sha256sum "${BINARY_NAME}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
+          sha256sum_aarch64=$(sha256sum "${BINARY_NAME}-aarch64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
+
+          cat > PKGBUILD <<EOF
+          pkgname=${BINARY_NAME}-bin
+          pkgver=${version}
+          pkgrel=1
+          pkgdesc="${{ inputs.pkgdesc }} (binary package)"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/x71c9/${BINARY_NAME}"
+          license=('MIT')
+          depends=(${{ inputs.aur_depends }})
+          provides=('${BINARY_NAME}')
+          conflicts=('${BINARY_NAME}')
+
+          source_x86_64=("${BINARY_NAME}-x86_64-\$pkgver.tar.gz::https://github.com/x71c9/${BINARY_NAME}/releases/download/v\$pkgver/${BINARY_NAME}-x86_64-unknown-linux-gnu.tar.gz")
+          source_aarch64=("${BINARY_NAME}-aarch64-\$pkgver.tar.gz::https://github.com/x71c9/${BINARY_NAME}/releases/download/v\$pkgver/${BINARY_NAME}-aarch64-unknown-linux-gnu.tar.gz")
+
+          sha256sums_x86_64=("${sha256sum_x86_64}")
+          sha256sums_aarch64=("${sha256sum_aarch64}")
+
+          package() {
+            if [[ \$CARCH == "x86_64" ]]; then
+              tar -xzf "${BINARY_NAME}-x86_64-\$pkgver.tar.gz"
+            elif [[ \$CARCH == "aarch64" ]]; then
+              tar -xzf "${BINARY_NAME}-aarch64-\$pkgver.tar.gz"
+            fi
+            install -Dm755 "${BINARY_NAME}" "\$pkgdir/usr/bin/${BINARY_NAME}"
+          }
+          EOF
+
+          makepkg --printsrcinfo > .SRCINFO
+          git config user.email "mail@x71c9.com"
+          git config user.name "x71c9"
+          git add PKGBUILD .SRCINFO
+          git commit -m "chore(release): release ${version}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" git push origin master
+          SCRIPT
+
+  update-nur:
+    name: Update NUR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+
+      - name: Checkout project repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Checkout NUR packages repository
+        uses: actions/checkout@v4
+        with:
+          repository: x71c9/nur-packages
+          token: ${{ secrets.NUR_PAT }}
+          path: nur-packages
+
+      - name: Bootstrap or update NUR package
+        run: |
+          BINARY_NAME="${{ inputs.binary_name }}"
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          PKG_DIR="nur-packages/pkgs/${BINARY_NAME}"
+
+          # Bootstrap: create default.nix and register in root default.nix if first time
+          if [ ! -f "${PKG_DIR}/default.nix" ]; then
+            mkdir -p "${PKG_DIR}"
+
+            HAS_COMPLETIONS="${{ inputs.has_shell_completions }}"
+            NUR_BUILD_INPUTS="${{ inputs.nur_build_inputs }}"
+            COMPLETION_SUBCMD="${{ inputs.completion_subcommand }}"
+            NUR_DESC="${{ inputs.nur_description }}"
+            [ -z "$NUR_DESC" ] && NUR_DESC="${{ inputs.pkgdesc }}"
+
+            # Build the function arguments line
+            if [ -n "$NUR_BUILD_INPUTS" ] && [ "$HAS_COMPLETIONS" = "true" ]; then
+              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, installShellFiles, $(echo $NUR_BUILD_INPUTS | tr ' ' ',') }:"
+            elif [ -n "$NUR_BUILD_INPUTS" ]; then
+              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, $(echo $NUR_BUILD_INPUTS | tr ' ' ',') }:"
+            elif [ "$HAS_COMPLETIONS" = "true" ]; then
+              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, installShellFiles }:"
+            else
+              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub }:"
+            fi
+
+            # Build optional nativeBuildInputs line
+            if [ "$HAS_COMPLETIONS" = "true" ]; then
+              NATIVE_BUILD_INPUTS="  nativeBuildInputs = [ installShellFiles ];"
+            else
+              NATIVE_BUILD_INPUTS=""
+            fi
+
+            # Build optional buildInputs line
+            if [ -n "$NUR_BUILD_INPUTS" ]; then
+              BUILD_INPUTS_PKGS=$(echo "$NUR_BUILD_INPUTS" | tr ' ' '\n' | sed 's/^/    /' | tr '\n' ' ' | sed 's/ $//')
+              BUILD_INPUTS="  buildInputs = [ ${BUILD_INPUTS_PKGS} ];"
+            else
+              BUILD_INPUTS=""
+            fi
+
+            # Build optional postInstall completion block
+            if [ "$HAS_COMPLETIONS" = "true" ]; then
+              POST_INSTALL="  postInstall = ''
+            installShellCompletion --cmd ${BINARY_NAME} \
+              --bash <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} bash) \
+              --zsh <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} zsh) \
+              --fish <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} fish)
+          '';"
+            else
+              POST_INSTALL=""
+            fi
+
+            {
+              echo "${FUNC_ARGS}"
+              echo ""
+              echo "rustPlatform.buildRustPackage rec {"
+              echo "  pname = \"${BINARY_NAME}\";"
+              echo "  version = \"${version}\"; # without \"v\""
+              echo ""
+              echo "  src = fetchFromGitHub {"
+              echo "    owner = \"x71c9\";"
+              echo "    repo = \"${BINARY_NAME}\";"
+              echo "    rev = \"v\${version}\";"
+              echo "    hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";"
+              echo "  };"
+              echo ""
+              echo "  cargoLock.lockFile = ./Cargo.lock;"
+              echo ""
+              [ -n "$NATIVE_BUILD_INPUTS" ] && echo "$NATIVE_BUILD_INPUTS"
+              [ -n "$BUILD_INPUTS" ] && echo "$BUILD_INPUTS"
+              echo ""
+              echo "  doCheck = false;"
+              echo ""
+              [ -n "$POST_INSTALL" ] && echo "$POST_INSTALL" && echo ""
+              echo "  mainProgram = \"${BINARY_NAME}\";"
+              echo ""
+              echo "  meta = with lib; {"
+              echo "    description = \"${NUR_DESC}\";"
+              echo "    homepage = \"https://github.com/x71c9/${BINARY_NAME}\";"
+              echo "    license = licenses.mit;"
+              echo "    maintainers = [];"
+              echo "    platforms = platforms.linux ++ platforms.darwin;"
+              echo "  };"
+              echo "}"
+            } > "${PKG_DIR}/default.nix"
+
+            # Register in root default.nix before the closing brace
+            sed -i "/^}$/i\\  ${BINARY_NAME} = pkgs.callPackage ./pkgs/${BINARY_NAME} { };" nur-packages/default.nix
+          fi
+
+          # Always copy Cargo.lock from the checked-out project
+          cp Cargo.lock "${PKG_DIR}/Cargo.lock"
+
+          # Update version
+          sed -i "s/version = \"[^\"]*\"/version = \"${version}\"/" "${PKG_DIR}/default.nix"
+
+          # Update source hash
+          echo "Calculating source hash..."
+          base32_hash=$(nix-prefetch-url --unpack "https://github.com/x71c9/${BINARY_NAME}/archive/refs/tags/v${version}.tar.gz")
+          new_hash=$(nix-hash --type sha256 --to-sri "$base32_hash")
+          sed -i "s|hash = \"[^\"]*\"|hash = \"${new_hash}\"|" "${PKG_DIR}/default.nix"
+          echo "Updated source hash to ${new_hash}"
+
+          cd nur-packages
+          git config user.email "108585118+x71c9@users.noreply.github.com"
+          git config user.name "x71c9"
+          git add "pkgs/${BINARY_NAME}/"
+          git add default.nix
+          git commit -m "${BINARY_NAME}: ${version}"
+          git push origin main
+          echo "Changes committed and pushed successfully"
