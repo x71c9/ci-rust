@@ -167,7 +167,7 @@ jobs:
   update-package-repos:
     name: Update Package Repositories
     needs: github-release
-    uses: x71c9/ci-rust/.github/workflows/update-packages.yml@main
+    uses: x71c9/ci-rust/.github/workflows/update-packages.yml@master
     with:
       version: ${{ inputs.version }}
       binary_name: ${{ inputs.binary_name }}

@@ -124,7 +124,7 @@ jobs:
     name: Trigger Build and Release
     needs: auto-release
     if: needs.auto-release.outputs.should_release == 'true'
-    uses: x71c9/ci-rust/.github/workflows/build-release.yml@main
+    uses: x71c9/ci-rust/.github/workflows/build-release.yml@master
     with:
       version: ${{ needs.auto-release.outputs.new_version }}
       binary_name: ${{ inputs.binary_name }}
