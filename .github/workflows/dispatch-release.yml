@@ -1,5 +1,6 @@
 ---
 name: Dispatch Release
+run-name: "Release ${{ github.event.client_payload.repo }}"
 on:
   repository_dispatch:
     types: [release]

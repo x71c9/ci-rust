@@ -156,9 +156,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          repository: x71c9/${{ inputs.binary_name }}
           tag_name: ${{ inputs.version }}
           files: bin/**
-          token: ${{ github.token }}
+          token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
           draft: false
           prerelease: false
 
