@@ -244,91 +244,17 @@ jobs:
           PKG_DIR="nur-packages/pkgs/${BINARY_NAME}"
           IS_FIRST_RUN=false
 
-          # Bootstrap: create default.nix and register in root default.nix if first time
+          HAS_COMPLETIONS="${{ inputs.has_shell_completions }}"
+          NUR_BUILD_INPUTS="${{ inputs.nur_build_inputs }}"
+          COMPLETION_SUBCMD="${{ inputs.completion_subcommand }}"
+          NUR_DESC="${{ inputs.nur_description }}"
+          [ -z "$NUR_DESC" ] && NUR_DESC="${{ inputs.pkgdesc }}"
+
+          mkdir -p "${PKG_DIR}"
+
+          # Register in root default.nix only on first run
           if [ ! -f "${PKG_DIR}/default.nix" ]; then
             IS_FIRST_RUN=true
-            mkdir -p "${PKG_DIR}"
-
-            HAS_COMPLETIONS="${{ inputs.has_shell_completions }}"
-            NUR_BUILD_INPUTS="${{ inputs.nur_build_inputs }}"
-            COMPLETION_SUBCMD="${{ inputs.completion_subcommand }}"
-            NUR_DESC="${{ inputs.nur_description }}"
-            [ -z "$NUR_DESC" ] && NUR_DESC="${{ inputs.pkgdesc }}"
-
-            # Build the function arguments line
-            if [ -n "$NUR_BUILD_INPUTS" ] && [ "$HAS_COMPLETIONS" = "true" ]; then
-              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, installShellFiles, $(echo $NUR_BUILD_INPUTS | tr ' ' ',') }:"
-            elif [ -n "$NUR_BUILD_INPUTS" ]; then
-              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, $(echo $NUR_BUILD_INPUTS | tr ' ' ',') }:"
-            elif [ "$HAS_COMPLETIONS" = "true" ]; then
-              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, installShellFiles }:"
-            else
-              FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub }:"
-            fi
-
-            # Build optional nativeBuildInputs line
-            if [ "$HAS_COMPLETIONS" = "true" ]; then
-              NATIVE_BUILD_INPUTS="  nativeBuildInputs = [ installShellFiles ];"
-            else
-              NATIVE_BUILD_INPUTS=""
-            fi
-
-            # Build optional buildInputs line
-            if [ -n "$NUR_BUILD_INPUTS" ]; then
-              BUILD_INPUTS_PKGS=$(echo "$NUR_BUILD_INPUTS" | tr ' ' '\n' | sed 's/^/    /' | tr '\n' ' ' | sed 's/ $//')
-              BUILD_INPUTS="  buildInputs = [ ${BUILD_INPUTS_PKGS} ];"
-            else
-              BUILD_INPUTS=""
-            fi
-
-            # Build optional postInstall completion block
-            if [ "$HAS_COMPLETIONS" = "true" ]; then
-              POST_INSTALL="  postInstall = ''
-            installShellCompletion --cmd ${BINARY_NAME} \
-              --bash <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} bash) \
-              --zsh <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} zsh) \
-              --fish <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} fish)
-          '';"
-            else
-              POST_INSTALL=""
-            fi
-
-            {
-              echo "${FUNC_ARGS}"
-              echo ""
-              echo "rustPlatform.buildRustPackage rec {"
-              echo "  pname = \"${BINARY_NAME}\";"
-              echo "  version = \"${version}\"; # without \"v\""
-              echo ""
-              echo "  src = fetchFromGitHub {"
-              echo "    owner = \"x71c9\";"
-              echo "    repo = \"${BINARY_NAME}\";"
-              echo "    rev = \"v\${version}\";"
-              echo "    hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";"
-              echo "  };"
-              echo ""
-              echo "  cargoLock.lockFile = ./Cargo.lock;"
-              echo ""
-              [ -n "$NATIVE_BUILD_INPUTS" ] && echo "$NATIVE_BUILD_INPUTS"
-              [ -n "$BUILD_INPUTS" ] && echo "$BUILD_INPUTS"
-              echo ""
-              echo "  doCheck = false;"
-              echo ""
-              [ -n "$POST_INSTALL" ] && echo "$POST_INSTALL" && echo ""
-              echo "  mainProgram = \"${BINARY_NAME}\";"
-              echo ""
-              echo "  meta = with lib; {"
-              echo "    description = \"${NUR_DESC}\";"
-              echo "    homepage = \"https://github.com/x71c9/${BINARY_NAME}\";"
-              echo "    license = licenses.mit;"
-              echo "    maintainers = [];"
-              echo "    platforms = platforms.linux ++ platforms.darwin;"
-              echo "  };"
-              echo "}"
-            } > "${PKG_DIR}/default.nix"
-
-            # Register new package in the NUR root default.nix
-            # Inserts the entry before the last closing brace of the attrset
             awk -v pkg="${BINARY_NAME}" '
               /^}$/ { last_brace_line = NR }
               { lines[NR] = $0 }
@@ -343,12 +269,87 @@ jobs:
             mv nur-packages/default.nix.tmp nur-packages/default.nix
           fi
 
+          # Build the function arguments line
+          # For nested attrs like "xorg.libxcb", only the top-level name goes in the args
+          if [ -n "$NUR_BUILD_INPUTS" ]; then
+            FUNC_ARGS_PKGS=$(echo "$NUR_BUILD_INPUTS" | tr ' ' '\n' | sed 's/\..*//' | sort -u | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//; s/ /, /g')
+          fi
+          if [ -n "$NUR_BUILD_INPUTS" ] && [ "$HAS_COMPLETIONS" = "true" ]; then
+            FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, installShellFiles, ${FUNC_ARGS_PKGS} }:"
+          elif [ -n "$NUR_BUILD_INPUTS" ]; then
+            FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, ${FUNC_ARGS_PKGS} }:"
+          elif [ "$HAS_COMPLETIONS" = "true" ]; then
+            FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub, installShellFiles }:"
+          else
+            FUNC_ARGS="{ lib, rustPlatform, fetchFromGitHub }:"
+          fi
+
+          # Build optional nativeBuildInputs line
+          if [ "$HAS_COMPLETIONS" = "true" ]; then
+            NATIVE_BUILD_INPUTS="  nativeBuildInputs = [ installShellFiles ];"
+          else
+            NATIVE_BUILD_INPUTS=""
+          fi
+
+          # Build optional buildInputs line (full dotted paths preserved, e.g. xorg.libxcb)
+          if [ -n "$NUR_BUILD_INPUTS" ]; then
+            BUILD_INPUTS_PKGS=$(echo "$NUR_BUILD_INPUTS" | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//')
+            BUILD_INPUTS="  buildInputs = [ ${BUILD_INPUTS_PKGS} ];"
+          else
+            BUILD_INPUTS=""
+          fi
+
+          # Build optional postInstall completion block
+          if [ "$HAS_COMPLETIONS" = "true" ]; then
+            POST_INSTALL="  postInstall = ''
+          installShellCompletion --cmd ${BINARY_NAME} \
+            --bash <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} bash) \
+            --zsh <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} zsh) \
+            --fish <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} fish)
+        '';"
+          else
+            POST_INSTALL=""
+          fi
+
+          # Always regenerate default.nix (picks up dependency/description changes)
+          # Hash placeholder will be replaced below after prefetch
+          {
+            echo "${FUNC_ARGS}"
+            echo ""
+            echo "rustPlatform.buildRustPackage rec {"
+            echo "  pname = \"${BINARY_NAME}\";"
+            echo "  version = \"${version}\"; # without \"v\""
+            echo ""
+            echo "  src = fetchFromGitHub {"
+            echo "    owner = \"x71c9\";"
+            echo "    repo = \"${BINARY_NAME}\";"
+            echo "    rev = \"v\${version}\";"
+            echo "    hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";"
+            echo "  };"
+            echo ""
+            echo "  cargoLock.lockFile = ./Cargo.lock;"
+            echo ""
+            [ -n "$NATIVE_BUILD_INPUTS" ] && echo "$NATIVE_BUILD_INPUTS"
+            [ -n "$BUILD_INPUTS" ] && echo "$BUILD_INPUTS"
+            echo ""
+            echo "  doCheck = false;"
+            echo ""
+            [ -n "$POST_INSTALL" ] && echo "$POST_INSTALL" && echo ""
+            echo "  mainProgram = \"${BINARY_NAME}\";"
+            echo ""
+            echo "  meta = with lib; {"
+            echo "    description = \"${NUR_DESC}\";"
+            echo "    homepage = \"https://github.com/x71c9/${BINARY_NAME}\";"
+            echo "    license = licenses.mit;"
+            echo "    maintainers = [];"
+            echo "    platforms = platforms.linux ++ platforms.darwin;"
+            echo "  };"
+            echo "}"
+          } > "${PKG_DIR}/default.nix"
+
           # Always copy Cargo.lock and README from the checked-out project
           cp Cargo.lock "${PKG_DIR}/Cargo.lock"
           [ -f README.md ] && cp README.md "${PKG_DIR}/README.md"
-
-          # Update version
-          sed -i "s/version = \"[^\"]*\"/version = \"${version}\"/" "${PKG_DIR}/default.nix"
 
           # Update source hash
           echo "Calculating source hash..."
