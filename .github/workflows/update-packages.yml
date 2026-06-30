@@ -299,20 +299,9 @@ jobs:
             BUILD_INPUTS=""
           fi
 
-          # Build optional postInstall completion block
-          if [ "$HAS_COMPLETIONS" = "true" ]; then
-            POST_INSTALL="  postInstall = ''
-          installShellCompletion --cmd ${BINARY_NAME} \
-            --bash <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} bash) \
-            --zsh <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} zsh) \
-            --fish <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} fish)
-        '';"
-          else
-            POST_INSTALL=""
-          fi
-
           # Always regenerate default.nix (picks up dependency/description changes)
           # Hash placeholder will be replaced below after prefetch
+          Q="''"
           {
             echo "${FUNC_ARGS}"
             echo ""
@@ -334,7 +323,15 @@ jobs:
             echo ""
             echo "  doCheck = false;"
             echo ""
-            [ -n "$POST_INSTALL" ] && echo "$POST_INSTALL" && echo ""
+            if [ "$HAS_COMPLETIONS" = "true" ]; then
+              echo "  postInstall = ${Q}"
+              echo "    installShellCompletion --cmd ${BINARY_NAME} \\"
+              echo "      --bash <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} bash) \\"
+              echo "      --zsh <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} zsh) \\"
+              echo "      --fish <(\$out/bin/${BINARY_NAME} ${COMPLETION_SUBCMD} fish)"
+              echo "  ${Q};"
+              echo ""
+            fi
             echo "  mainProgram = \"${BINARY_NAME}\";"
             echo ""
             echo "  meta = with lib; {"
