@@ -66,6 +66,9 @@ jobs:
           ref: ${{ inputs.version }}
           token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
 
+      - name: Remove untrusted Homebrew taps
+        run: brew untap aws/tap 2>/dev/null || true
+
       - name: Install macOS system dependencies
         if: inputs.macos_extra_brew != ''
         run: brew install ${{ inputs.macos_extra_brew }}
