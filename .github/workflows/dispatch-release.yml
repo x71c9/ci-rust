@@ -130,6 +130,7 @@ jobs:
       macos_extra_brew:      ${{ needs.auto-release.outputs.macos_extra_brew }}
       macos_extra_env:       ${{ needs.auto-release.outputs.macos_extra_env }}
     secrets:
-      HOMEBREW_PAT:  ${{ secrets.HOMEBREW_PAT }}
-      AUR_SECRET_KEY: ${{ secrets.AUR_SECRET_KEY }}
-      NUR_PAT:       ${{ secrets.NUR_PAT }}
+      BYPASS_BRANCH_RULE_PAT: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
+      HOMEBREW_PAT:           ${{ secrets.HOMEBREW_PAT }}
+      AUR_SECRET_KEY:         ${{ secrets.AUR_SECRET_KEY }}
+      NUR_PAT:                ${{ secrets.NUR_PAT }}

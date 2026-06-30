@@ -41,6 +41,8 @@ on:
         type: string
         default: ""
     secrets:
+      BYPASS_BRANCH_RULE_PAT:
+        required: true
       HOMEBREW_PAT:
         required: true
       AUR_SECRET_KEY:
@@ -60,7 +62,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          repository: x71c9/${{ inputs.binary_name }}
           ref: ${{ inputs.version }}
+          token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
 
       - name: Install macOS system dependencies
         if: inputs.macos_extra_brew != ''
@@ -103,7 +107,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          repository: x71c9/${{ inputs.binary_name }}
           ref: ${{ inputs.version }}
+          token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -137,7 +143,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          repository: x71c9/${{ inputs.binary_name }}
           ref: ${{ inputs.version }}
+          token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
