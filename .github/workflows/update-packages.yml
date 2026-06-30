@@ -33,6 +33,8 @@ on:
         type: string
         default: "completion"
     secrets:
+      BYPASS_BRANCH_RULE_PAT:
+        required: true
       AUR_SECRET_KEY:
         required: true
       NUR_PAT:
@@ -223,7 +225,9 @@ jobs:
       - name: Checkout project repository
         uses: actions/checkout@v4
         with:
+          repository: x71c9/${{ inputs.binary_name }}
           ref: ${{ inputs.version }}
+          token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
 
       - name: Checkout NUR packages repository
         uses: actions/checkout@v4
@@ -364,9 +368,9 @@ jobs:
           version="${version#v}"
           FORMULA="Formula/${BINARY_NAME}.rb"
 
-          wget -q -O "${BINARY_NAME}-x86_64.tar.gz" \
+          wget -q --tries=5 --waitretry=10 -O "${BINARY_NAME}-x86_64.tar.gz" \
             "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-x86_64-apple-darwin.tar.gz"
-          wget -q -O "${BINARY_NAME}-aarch64.tar.gz" \
+          wget -q --tries=5 --waitretry=10 -O "${BINARY_NAME}-aarch64.tar.gz" \
             "https://github.com/x71c9/${BINARY_NAME}/releases/download/v${version}/${BINARY_NAME}-aarch64-apple-darwin.tar.gz"
 
           SHA256_X86_64=$(sha256sum "${BINARY_NAME}-x86_64.tar.gz" | awk '{print $1}')

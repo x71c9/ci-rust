@@ -177,6 +177,7 @@ jobs:
       has_shell_completions: ${{ inputs.has_shell_completions }}
       completion_subcommand: ${{ inputs.completion_subcommand }}
     secrets:
+      BYPASS_BRANCH_RULE_PAT: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
       AUR_SECRET_KEY: ${{ secrets.AUR_SECRET_KEY }}
       NUR_PAT: ${{ secrets.NUR_PAT }}
       HOMEBREW_PAT: ${{ secrets.HOMEBREW_PAT }}
