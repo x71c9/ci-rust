@@ -242,9 +242,11 @@ jobs:
           version="${{ inputs.version }}"
           version="${version#v}"
           PKG_DIR="nur-packages/pkgs/${BINARY_NAME}"
+          IS_FIRST_RUN=false
 
           # Bootstrap: create default.nix and register in root default.nix if first time
           if [ ! -f "${PKG_DIR}/default.nix" ]; then
+            IS_FIRST_RUN=true
             mkdir -p "${PKG_DIR}"
 
             HAS_COMPLETIONS="${{ inputs.has_shell_completions }}"
@@ -325,12 +327,25 @@ jobs:
               echo "}"
             } > "${PKG_DIR}/default.nix"
 
-            # Register in root default.nix before the closing brace
-            sed -i "/^}$/i\\  ${BINARY_NAME} = pkgs.callPackage ./pkgs/${BINARY_NAME} { };" nur-packages/default.nix
+            # Register new package in the NUR root default.nix
+            # Inserts the entry before the last closing brace of the attrset
+            awk -v pkg="${BINARY_NAME}" '
+              /^}$/ { last_brace_line = NR }
+              { lines[NR] = $0 }
+              END {
+                for (i = 1; i <= NR; i++) {
+                  if (i == last_brace_line)
+                    print "  " pkg " = pkgs.callPackage ./pkgs/" pkg " { };"
+                  print lines[i]
+                }
+              }
+            ' nur-packages/default.nix > nur-packages/default.nix.tmp
+            mv nur-packages/default.nix.tmp nur-packages/default.nix
           fi
 
-          # Always copy Cargo.lock from the checked-out project
+          # Always copy Cargo.lock and README from the checked-out project
           cp Cargo.lock "${PKG_DIR}/Cargo.lock"
+          [ -f README.md ] && cp README.md "${PKG_DIR}/README.md"
 
           # Update version
           sed -i "s/version = \"[^\"]*\"/version = \"${version}\"/" "${PKG_DIR}/default.nix"
@@ -346,7 +361,7 @@ jobs:
           git config user.email "108585118+x71c9@users.noreply.github.com"
           git config user.name "x71c9"
           git add "pkgs/${BINARY_NAME}/"
-          git add default.nix
+          [ "$IS_FIRST_RUN" = "true" ] && git add default.nix
           git commit -m "${BINARY_NAME}: ${version}"
           git push origin main
           echo "Changes committed and pushed successfully"
