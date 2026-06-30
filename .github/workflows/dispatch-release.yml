@@ -1,0 +1,135 @@
+---
+name: Dispatch Release
+on:
+  repository_dispatch:
+    types: [release]
+permissions:
+  contents: write
+jobs:
+  auto-release:
+    name: Auto Release
+    runs-on: ubuntu-latest
+    outputs:
+      new_version:          ${{ steps.release.outputs.new_version }}
+      should_release:       ${{ steps.release.outputs.should_release }}
+      binary_name:          ${{ steps.config.outputs.binary_name }}
+      crate_name:           ${{ steps.config.outputs.crate_name }}
+      pkgdesc:              ${{ steps.config.outputs.pkgdesc }}
+      aur_depends:          ${{ steps.config.outputs.aur_depends }}
+      nur_build_inputs:     ${{ steps.config.outputs.nur_build_inputs }}
+      nur_description:      ${{ steps.config.outputs.nur_description }}
+      has_shell_completions: ${{ steps.config.outputs.has_shell_completions }}
+      completion_subcommand: ${{ steps.config.outputs.completion_subcommand }}
+      extra_apt_packages:   ${{ steps.config.outputs.extra_apt_packages }}
+      macos_extra_brew:     ${{ steps.config.outputs.macos_extra_brew }}
+      macos_extra_env:      ${{ steps.config.outputs.macos_extra_env }}
+    steps:
+      - name: Checkout project repository
+        uses: actions/checkout@v4
+        with:
+          repository: x71c9/${{ github.event.client_payload.repo }}
+          fetch-depth: 0
+          token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
+
+      - name: Read ci.toml
+        id: config
+        run: |
+          cfg=".github/ci.toml"
+
+          read_field() {
+            grep "^$1" "$cfg" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || true
+          }
+
+          binary_name=$(read_field binary_name)
+          crate_name=$(read_field crate_name)
+          [ -z "$crate_name" ] && crate_name="$binary_name"
+          pkgdesc=$(read_field pkgdesc)
+          aur_depends=$(read_field aur_depends)
+          [ -z "$aur_depends" ] && aur_depends="'glibc'"
+          nur_build_inputs=$(read_field nur_build_inputs)
+          nur_description=$(read_field nur_description)
+          has_shell_completions=$(read_field has_shell_completions)
+          [ -z "$has_shell_completions" ] && has_shell_completions="false"
+          completion_subcommand=$(read_field completion_subcommand)
+          [ -z "$completion_subcommand" ] && completion_subcommand="completion"
+          extra_apt_packages=$(read_field extra_apt_packages)
+          macos_extra_brew=$(read_field macos_extra_brew)
+          macos_extra_env=$(read_field macos_extra_env)
+
+          echo "binary_name=${binary_name}"           >> $GITHUB_OUTPUT
+          echo "crate_name=${crate_name}"             >> $GITHUB_OUTPUT
+          echo "pkgdesc=${pkgdesc}"                   >> $GITHUB_OUTPUT
+          echo "aur_depends=${aur_depends}"           >> $GITHUB_OUTPUT
+          echo "nur_build_inputs=${nur_build_inputs}" >> $GITHUB_OUTPUT
+          echo "nur_description=${nur_description}"   >> $GITHUB_OUTPUT
+          echo "has_shell_completions=${has_shell_completions}" >> $GITHUB_OUTPUT
+          echo "completion_subcommand=${completion_subcommand}" >> $GITHUB_OUTPUT
+          echo "extra_apt_packages=${extra_apt_packages}"       >> $GITHUB_OUTPUT
+          echo "macos_extra_brew=${macos_extra_brew}"           >> $GITHUB_OUTPUT
+          echo "macos_extra_env=${macos_extra_env}"             >> $GITHUB_OUTPUT
+
+      - name: Install system dependencies
+        if: steps.config.outputs.extra_apt_packages != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ steps.config.outputs.extra_apt_packages }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-release
+        run: cargo install cargo-release
+
+      - name: Configure Git
+        run: |
+          git config user.name "x71c9"
+          git config user.email "108585118+x71c9@users.noreply.github.com"
+
+      - name: Determine bump type and release
+        id: release
+        run: |
+          COMMIT_MSG="${{ github.event.client_payload.pr_title }}"
+          echo "PR title: $COMMIT_MSG"
+
+          BUMP_TYPE="patch"
+
+          if echo "$COMMIT_MSG" | grep -qE "^(feat|fix|perf|docs|style|refactor|test|chore)!:" || \
+             echo "$COMMIT_MSG" | grep -q "BREAKING CHANGE:"; then
+            BUMP_TYPE="major"
+          elif echo "$COMMIT_MSG" | grep -qE "^feat:"; then
+            BUMP_TYPE="minor"
+          elif echo "$COMMIT_MSG" | grep -qE "^(fix|perf|security|docs|style|refactor|test|chore):"; then
+            BUMP_TYPE="patch"
+          else
+            echo "Non-conventional commit detected, defaulting to patch"
+            BUMP_TYPE="patch"
+          fi
+
+          echo "Determined version bump type: $BUMP_TYPE"
+          cargo release --execute --no-confirm $BUMP_TYPE
+
+          NEW_VERSION=$(grep '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "new_version=v$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "should_release=true"       >> $GITHUB_OUTPUT
+          echo "New version: v$NEW_VERSION"
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  trigger-build:
+    name: Trigger Build and Release
+    needs: auto-release
+    if: needs.auto-release.outputs.should_release == 'true'
+    uses: x71c9/ci-rust/.github/workflows/build-release.yml@master
+    with:
+      version:               ${{ needs.auto-release.outputs.new_version }}
+      binary_name:           ${{ needs.auto-release.outputs.binary_name }}
+      pkgdesc:               ${{ needs.auto-release.outputs.pkgdesc }}
+      aur_depends:           ${{ needs.auto-release.outputs.aur_depends }}
+      nur_build_inputs:      ${{ needs.auto-release.outputs.nur_build_inputs }}
+      nur_description:       ${{ needs.auto-release.outputs.nur_description }}
+      has_shell_completions: ${{ fromJSON(needs.auto-release.outputs.has_shell_completions) }}
+      completion_subcommand: ${{ needs.auto-release.outputs.completion_subcommand }}
+      macos_extra_brew:      ${{ needs.auto-release.outputs.macos_extra_brew }}
+      macos_extra_env:       ${{ needs.auto-release.outputs.macos_extra_env }}
+    secrets:
+      HOMEBREW_PAT:  ${{ secrets.HOMEBREW_PAT }}
+      AUR_SECRET_KEY: ${{ secrets.AUR_SECRET_KEY }}
+      NUR_PAT:       ${{ secrets.NUR_PAT }}

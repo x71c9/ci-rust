@@ -3,10 +3,9 @@ name: PR Validation
 on:
   workflow_call:
     inputs:
-      extra_apt_packages:
-        required: false
+      repo:
+        required: true
         type: string
-        default: ""
 permissions:
   contents: read
   pull-requests: write
@@ -43,10 +42,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          repository: x71c9/${{ inputs.repo }}
+
+      - name: Read ci.toml
+        id: config
+        run: |
+          extra_apt=$(grep '^extra_apt_packages' .github/ci.toml 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || true)
+          echo "extra_apt_packages=${extra_apt}" >> $GITHUB_OUTPUT
 
       - name: Install system dependencies
-        if: inputs.extra_apt_packages != ''
-        run: sudo apt-get update && sudo apt-get install -y ${{ inputs.extra_apt_packages }}
+        if: steps.config.outputs.extra_apt_packages != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ steps.config.outputs.extra_apt_packages }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
