@@ -38,7 +38,7 @@ jobs:
           cfg="ci.toml"
 
           read_field() {
-            grep "^$1" "$cfg" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || true
+            grep "^$1" "$cfg" 2>/dev/null | sed 's/^[^=]*= *"\([^"]*\)".*/\1/' || true
           }
 
           binary_name=$(read_field binary_name)

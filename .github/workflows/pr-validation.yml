@@ -48,7 +48,7 @@ jobs:
       - name: Read ci.toml
         id: config
         run: |
-          extra_apt=$(grep '^extra_apt_packages' ci.toml 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || true)
+          extra_apt=$(grep '^extra_apt_packages' ci.toml 2>/dev/null | sed 's/^[^=]*= *"\([^"]*\)".*/\1/' || true)
           echo "extra_apt_packages=${extra_apt}" >> $GITHUB_OUTPUT
 
       - name: Install system dependencies
