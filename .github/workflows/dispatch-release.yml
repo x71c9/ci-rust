@@ -26,7 +26,7 @@ jobs:
       macos_extra_env:      ${{ steps.config.outputs.macos_extra_env }}
     steps:
       - name: Checkout project repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: x71c9/${{ github.event.client_payload.repo }}
           fetch-depth: 0
@@ -35,7 +35,7 @@ jobs:
       - name: Read ci.toml
         id: config
         run: |
-          cfg=".github/ci.toml"
+          cfg="ci.toml"
 
           read_field() {
             grep "^$1" "$cfg" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || true

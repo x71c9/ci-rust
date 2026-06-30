@@ -223,14 +223,14 @@ jobs:
         uses: cachix/install-nix-action@v25
 
       - name: Checkout project repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: x71c9/${{ inputs.binary_name }}
           ref: ${{ inputs.version }}
           token: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
 
       - name: Checkout NUR packages repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: x71c9/nur-packages
           token: ${{ secrets.NUR_PAT }}
@@ -356,7 +356,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: x71c9/homebrew-x71c9
           token: ${{ secrets.HOMEBREW_PAT }}
