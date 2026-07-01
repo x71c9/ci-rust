@@ -123,7 +123,7 @@ jobs:
           makepkg --printsrcinfo > .SRCINFO
           git config user.email "mail@x71c9.com"
           git config user.name "x71c9"
-          git add .
+          git add PKGBUILD .SRCINFO
           git commit -m "chore(release): release ${version}"
           GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" git push origin master
           SCRIPT
