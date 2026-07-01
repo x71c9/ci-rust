@@ -445,4 +445,14 @@ jobs:
           git config user.email "108585118+x71c9@users.noreply.github.com"
           git add "$FORMULA"
           git commit -m "${BINARY_NAME}: ${version}"
-          git push
+
+          for i in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $i), fetching and rebasing..."
+            git fetch origin master
+            git rebase origin/master
+          done
+          echo "failed to push after 5 attempts"
+          exit 1
