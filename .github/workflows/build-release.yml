@@ -32,6 +32,10 @@ on:
         required: false
         type: string
         default: "completion"
+      bin_aliases:
+        required: false
+        type: string
+        default: ""
       macos_extra_brew:
         required: false
         type: string
@@ -180,6 +184,7 @@ jobs:
       nur_description: ${{ inputs.nur_description }}
       has_shell_completions: ${{ inputs.has_shell_completions }}
       completion_subcommand: ${{ inputs.completion_subcommand }}
+      bin_aliases: ${{ inputs.bin_aliases }}
     secrets:
       BYPASS_BRANCH_RULE_PAT: ${{ secrets.BYPASS_BRANCH_RULE_PAT }}
       AUR_SECRET_KEY: ${{ secrets.AUR_SECRET_KEY }}

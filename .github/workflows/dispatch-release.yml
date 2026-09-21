@@ -21,6 +21,7 @@ jobs:
       nur_description:      ${{ steps.config.outputs.nur_description }}
       has_shell_completions: ${{ steps.config.outputs.has_shell_completions }}
       completion_subcommand: ${{ steps.config.outputs.completion_subcommand }}
+      bin_aliases:          ${{ steps.config.outputs.bin_aliases }}
       extra_apt_packages:   ${{ steps.config.outputs.extra_apt_packages }}
       macos_extra_brew:     ${{ steps.config.outputs.macos_extra_brew }}
       macos_extra_env:      ${{ steps.config.outputs.macos_extra_env }}
@@ -38,7 +39,7 @@ jobs:
           cfg="ci.toml"
 
           read_field() {
-            grep "^$1" "$cfg" 2>/dev/null | sed 's/^[^=]*= *"\([^"]*\)".*/\1/' || true
+            grep "^$1[[:space:]]*=" "$cfg" 2>/dev/null | sed 's/^[^=]*= *"\([^"]*\)".*/\1/' || true
           }
 
           binary_name=$(read_field binary_name)
@@ -53,6 +54,7 @@ jobs:
           [ -z "$has_shell_completions" ] && has_shell_completions="false"
           completion_subcommand=$(read_field completion_subcommand)
           [ -z "$completion_subcommand" ] && completion_subcommand="completion"
+          bin_aliases=$(read_field bin_aliases)
           extra_apt_packages=$(read_field extra_apt_packages)
           macos_extra_brew=$(read_field macos_extra_brew)
           macos_extra_env=$(read_field macos_extra_env)
@@ -65,6 +67,7 @@ jobs:
           echo "nur_description=${nur_description}"   >> $GITHUB_OUTPUT
           echo "has_shell_completions=${has_shell_completions}" >> $GITHUB_OUTPUT
           echo "completion_subcommand=${completion_subcommand}" >> $GITHUB_OUTPUT
+          echo "bin_aliases=${bin_aliases}"                     >> $GITHUB_OUTPUT
           echo "extra_apt_packages=${extra_apt_packages}"       >> $GITHUB_OUTPUT
           echo "macos_extra_brew=${macos_extra_brew}"           >> $GITHUB_OUTPUT
           echo "macos_extra_env=${macos_extra_env}"             >> $GITHUB_OUTPUT
@@ -129,6 +132,7 @@ jobs:
       nur_description:       ${{ needs.auto-release.outputs.nur_description }}
       has_shell_completions: ${{ fromJSON(needs.auto-release.outputs.has_shell_completions) }}
       completion_subcommand: ${{ needs.auto-release.outputs.completion_subcommand }}
+      bin_aliases:           ${{ needs.auto-release.outputs.bin_aliases }}
       macos_extra_brew:      ${{ needs.auto-release.outputs.macos_extra_brew }}
       macos_extra_env:       ${{ needs.auto-release.outputs.macos_extra_env }}
     secrets:
